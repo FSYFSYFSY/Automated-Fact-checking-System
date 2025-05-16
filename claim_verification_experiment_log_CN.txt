@@ -1,0 +1,93 @@
+
+🔬 实验日志：Claim Verification Pipeline with ColBERT / E5 + RoBERTa 推理
+
+---
+
+🌐 系统架构概述
+
+- Claim 输入 ➜  
+  使用 ColBERTv2（或E5）进行 evidence 检索  
+  ➜ 取 top-k 个 evidence  
+  ➜ 将 claim 与 evidence 用 </s> 分隔拼接  
+  ➜ 输入到微调后的 RoBERTa 推理模型中进行三分类预测（Supports / Refutes / Not Enough Info）
+
+---
+
+🔎 Retrieval 模块
+
+✅ 使用模型：
+- ColBERTv2（不可微调，效果较弱）
+- E5-base-v2（可微调，速度快，支持 softmax / triplet loss 等训练方式）
+
+📌 遇到的问题与分析
+
+❗问题1：预测结果倾向 Not Enough Info
+- 原因：evidence 数量过多，含有无关内容干扰判断
+- 解决方案：
+  - 减少 Top-k 数量
+  - 引入检索得分阈值 ε（epsilon）
+
+❗问题2：检索模型找不到正确 evidence
+- 原因：ColBERT 无法微调，难以适配领域
+- 解决方案：使用 E5 替代并进行微调
+
+❗问题3：E5 检索速度快但准确率不足
+- 解决方案：使用 TripletLoss 或 MultipleNegativesRankingLoss 对 E5 微调增强表示能力
+
+📊 Retrieval 实验对比
+
+训练设置                | Epoch | Loss      | Top-k | ε    | F-score  | Acc      | Harmonic Mean
+------------------------|--------|-----------|--------|------|----------|----------|----------------
+无训练                  | -      | -         | 6      | 0.1  | 0.0462   | 0.2987   | 0.0800
+正向训练                | 5      | -         | 6      | 0.1  | 0.0465   | 0.2922   | 0.0803
+正向训练                | 15     | -         | 6      | 0.1  | 0.0372   | 0.3182   | 0.0667
+Triplet Loss (1+3负)     | 5      | Triplet   | 6      | 0.1  | 0.0151   | 0.3506   | 0.0290
+ε=0.5, top_k=10         | -      | -         | 10     | 0.5  | 0.0691   | 0.3052   | 0.1127
+ε=0.5, top_k=6          | -      | -         | 6      | 0.5  | 0.0738   | 0.2597   | 0.1149
+
+✅ 结论：
+- ε 和 top-k 对 F-score 影响巨大
+- 高质量 hard negative 是 TripletLoss 的关键
+- 推荐 baseline 为 TripletLoss，改进方案为 MultipleNegativesRankingLoss
+
+---
+
+🧠 Inference 模块（RoBERTa 推理）
+
+推理输入格式：
+[CLS] query: CLAIM </s> passage: EVIDENCE
+
+使用模型：
+- RoBERTa-base（非跨语言）
+- XLM-RoBERTa-base（支持跨语言）
+
+Finetuning 策略：
+- 微调最后2~3层 encoder 层 + 分类器
+- 禁用全参数微调（GPU OOM）
+
+📊 推理结果对比
+
+模型训练状态      | Finetune 层数 | F-score | Acc    | Harmonic Mean
+------------------|----------------|---------|--------|----------------
+未训练            | 0              | 0.0611  | 0.2338 | 0.0969
+微调最后三层      | 3              | 0.0611  | 0.3052 | 0.1019
+
+---
+
+🚧 训练策略对性能影响分析
+
+训练类型               | 说明                                    | 效果分析
+----------------------|-----------------------------------------|------------
+正样本 Only           | 每个 claim 只和真实 evidence 训练        | F-score 上升慢，需更多 epochs
+Triplet Loss          | 每个 claim + 1正 + 多个负 evidence      | 精度下降，需高质量负样本
+MultipleNegativesLoss | 所有其他 evidence 都当作负样本          | 稳定训练表现优，但需强硬件
+自监督负样本（未完成） | 基于当前模型检索错误结果作为负例        | 有望进一步提升效果
+
+---
+
+✅ 实验建议
+
+- Triplet Loss + 随机负样本 ➜ Baseline
+- MultipleNegativesRankingLoss ➜ 提升方案
+- 使用 hard negative / 自监督构造负例提升性能
+- Inference 模型建议微调最后2~3层，避免 OOM

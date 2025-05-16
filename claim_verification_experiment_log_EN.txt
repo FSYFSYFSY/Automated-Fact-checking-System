@@ -1,0 +1,96 @@
+
+Claim Verification Experiment Log (CO2 Domain)
+
+==============================
+Retrieval Component Evaluation
+==============================
+
+Model Variants:
+- ColBERTv2 (retrieval only, deprecated)
+- RoBERTaV2 (inference model, better than BERT but not multilingual)
+- XLM-Roberta-Base (for cross-lingual tasks)
+
+Workflow:
+1. Input a claim.
+2. Use ColBERT to retrieve top-k evidence.
+3. Concatenate claim and evidence with </s> separator.
+4. Use fine-tuned RoBERTa to classify the claim type.
+
+Finetuning Strategy:
+- Finetune the last 2 or 3 layers of RoBERTa (still under evaluation).
+
+==============================
+Common Issues and Analysis
+==============================
+
+Issue 1: "Not Enough Info" predicted for most inputs.
+- Cause: Too many evidence passages, introducing noise.
+- Solution 1: Reduce top_k.
+- Solution 2: Use a similarity threshold (✓) to filter evidence.
+
+Tradeoff: Too many evidence passages hurt precision. Too few will risk missing key info.
+
+Issue 2: Incorrect evidence retrieved.
+- Cause: Poor ColBERT performance; no tuning.
+- Solution: Switch to E5 model.
+
+Issue 3: E5 faster but also has accuracy issues.
+- Solution: Finetune E5 on domain-specific data.
+
+==============================
+Retrieval Results
+==============================
+
+E5 without any finetuning (epsilon=0.1, top_k=6):
+- Evidence Retrieval F-score (F): 0.0422
+- Claim Classification Accuracy (A): 0.2987
+- Harmonic Mean (F, A): 0.0800
+
+E5 MultipleNegativesRankingLoss trained with only positive samples for 5 epochs:
+- F: 0.0465
+- A: 0.2922
+- Harmonic Mean: 0.0803
+
+E5 MultipleNegativesRankingLoss trained with only positive samples for 15 epochs:
+- F: 0.0372
+- A: 0.3182
+- Harmonic Mean: 0.0667
+
+TripletLoss training for 5 epochs with 1 pos + 3 random negatives:
+- F: 0.0152
+- A: 0.3506
+- Harmonic Mean: 0.0290
+
+Impact of Epsilon and top_k on Retrieval:
+- epsilon=0.5, top_k=10:
+  - F: 0.0691
+  - A: 0.3052
+  - Harmonic Mean: 0.1127
+
+- epsilon=0.5, top_k=6:
+  - F: 0.0738
+  - A: 0.2597
+  - Harmonic Mean: 0.1149
+
+Key Insight:
+High-quality negative examples significantly impact retrieval performance.
+We propose:
+- Use random negatives as baseline (TripletLoss)
+
+
+==============================
+Inference Model Results
+==============================
+
+RoBERTa w/o training:
+- F: 0.0612
+- A: 0.2338
+- Harmonic Mean: 0.0969
+
+RoBERTa finetuned on last 3 layers:
+- F: 0.0612
+- A: 0.3052
+- Harmonic Mean: 0.1019
+
+Note: Full-layer finetuning causes OOM issues.
+

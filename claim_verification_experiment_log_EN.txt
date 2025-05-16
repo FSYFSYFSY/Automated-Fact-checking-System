@@ -7,12 +7,13 @@ Retrieval Component Evaluation
 
 Model Variants:
 - ColBERTv2 (retrieval only, deprecated)
+- E5(retrieval, finetuning)
 - RoBERTaV2 (inference model, better than BERT but not multilingual)
 - XLM-Roberta-Base (for cross-lingual tasks)
 
 Workflow:
-1. Input a claim.
-2. Use ColBERT to retrieve top-k evidence.
+1. load a claim.
+2. Use fine-tuned E5 to retrieve top-k evidence.
 3. Concatenate claim and evidence with </s> separator.
 4. Use fine-tuned RoBERTa to classify the claim type.
 
